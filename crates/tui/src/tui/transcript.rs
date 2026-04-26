@@ -16,6 +16,8 @@
 //! Width or render-option changes still bust the entire cache (correct: wrap
 //! layout depends on width and which cells are visible at all).
 
+use std::sync::Arc;
+
 use ratatui::text::Line;
 
 use crate::tui::app::TranscriptSpacing;
@@ -24,12 +26,19 @@ use crate::tui::scrolling::TranscriptLineMeta;
 
 /// Per-cell cached render output. Reused across `ensure` calls when the
 /// upstream cell's revision counter hasn't changed.
+///
+/// Lines are stored behind an `Arc` so that cloning a `CachedCell` during
+/// cache-ensure (which touches every cell every frame) is O(1) rather than
+/// O(rendered_line_count). The flatten step uses `Arc::make_mut` to produce
+/// an owned `Vec` for the final `lines` assembly, so the only deep-clone
+/// occurs on the flattened output — once per frame instead of once per cell.
 #[derive(Debug, Clone)]
 struct CachedCell {
     /// Revision the cell was at when the lines/meta were rendered.
     revision: u64,
-    /// Rendered lines for this cell (without trailing inter-cell spacers).
-    lines: Vec<Line<'static>>,
+    /// Rendered lines for this cell (without trailing inter-cell spacers),
+    /// shared via `Arc` so cache enumeration is O(N) not O(N*lines).
+    lines: Arc<Vec<Line<'static>>>,
     /// Whether this cell's rendered output was empty (e.g. Thinking hidden).
     /// Cached so we can skip empty cells without re-rendering.
     is_empty: bool,
@@ -127,7 +136,7 @@ impl TranscriptViewCache {
             let is_empty = rendered.is_empty();
             new_per_cell.push(CachedCell {
                 revision: current_rev,
-                lines: rendered,
+                lines: Arc::new(rendered),
                 is_empty,
                 is_stream_continuation: cell.is_stream_continuation(),
                 is_conversational: cell.is_conversational(),
@@ -158,6 +167,9 @@ impl TranscriptViewCache {
             if cached.is_empty {
                 continue;
             }
+            // Arc::make_mut would deep-clone only on write; since we just
+            // rebuilt `lines` from scratch we always need the owned data.
+            // Deref is zero-cost and gives us &[Line].
             for (line_in_cell, line) in cached.lines.iter().enumerate() {
                 lines.push(line.clone());
                 meta.push(TranscriptLineMeta::CellLine {

@@ -19,6 +19,8 @@ pub struct Settings {
     pub calm_mode: bool,
     /// Reduce animation and redraw churn
     pub low_motion: bool,
+    /// Enable fancy footer animations (water-spout strip, pulsing text)
+    pub fancy_animations: bool,
     /// Show thinking blocks from the model
     pub show_thinking: bool,
     /// Show detailed tool output
@@ -47,6 +49,7 @@ impl Default for Settings {
             auto_compact: true,
             calm_mode: false,
             low_motion: false,
+            fancy_animations: false,
             show_thinking: true,
             show_tool_details: true,
             composer_density: "comfortable".to_string(),
@@ -135,6 +138,9 @@ impl Settings {
             }
             "low_motion" | "motion" => {
                 self.low_motion = parse_bool(value)?;
+            }
+            "fancy_animations" | "fancy" | "animations" => {
+                self.fancy_animations = parse_bool(value)?;
             }
             "show_thinking" | "thinking" => {
                 self.show_thinking = parse_bool(value)?;
@@ -244,6 +250,7 @@ impl Settings {
         lines.push(format!("  auto_compact:       {}", self.auto_compact));
         lines.push(format!("  calm_mode:          {}", self.calm_mode));
         lines.push(format!("  low_motion:         {}", self.low_motion));
+        lines.push(format!("  fancy_animations:   {}", self.fancy_animations));
         lines.push(format!("  show_thinking:      {}", self.show_thinking));
         lines.push(format!("  show_tool_details:  {}", self.show_tool_details));
         lines.push(format!("  composer_density:   {}", self.composer_density));
@@ -275,6 +282,7 @@ impl Settings {
             ("auto_compact", "Auto-compact conversations: on/off"),
             ("calm_mode", "Calmer UI defaults: on/off"),
             ("low_motion", "Reduce animation and redraw churn: on/off"),
+            ("fancy_animations", "Fancy footer animations (water-spout strip): on/off"),
             ("show_thinking", "Show model thinking: on/off"),
             ("show_tool_details", "Show detailed tool output: on/off"),
             (

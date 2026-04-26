@@ -357,7 +357,34 @@ impl Renderable for ComposerWidget<'_> {
             } else {
                 ""
             };
-            for (idx, entry) in menu_entries.iter().enumerate() {
+
+            // Compute a viewport window into the menu entries so the
+            // selection cursor stays visible even when there are more
+            // entries than available rows.
+            let menu_visible_rows = inner_area
+                .height
+                .saturating_sub(visual_rows as u16)
+                .saturating_sub(top_padding as u16)
+                .saturating_sub(1) // at least one row for the cursor
+                .max(1) as usize;
+            let menu_total = menu_entries.len();
+            let menu_top = if menu_total <= menu_visible_rows {
+                0
+            } else {
+                // Keep the selection centered in the viewport.
+                let half = menu_visible_rows / 2;
+                if selected <= half {
+                    0
+                } else if selected + half >= menu_total {
+                    menu_total.saturating_sub(menu_visible_rows)
+                } else {
+                    selected.saturating_sub(half)
+                }
+            };
+            let menu_bottom = (menu_top + menu_visible_rows).min(menu_total);
+
+            for idx in menu_top..menu_bottom {
+                let entry = &menu_entries[idx];
                 let is_selected = idx == selected;
                 let style = if is_selected {
                     Style::default()

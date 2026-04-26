@@ -9,7 +9,24 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use tokio::time::timeout as tokio_timeout;
 use serde_json::{Value, json};
+
+/// Default idle timeout for SSE stream reads (300 seconds = 5 minutes).
+/// After this period with no data, the stream is considered stalled and
+/// yields a recoverable error so the caller can retry.
+const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Reads the `DEEPSEEK_STREAM_IDLE_TIMEOUT_SECS` env var, falling back to
+/// the default 300s. The parsed value is clamped to [1, 3600] seconds.
+fn stream_idle_timeout() -> Duration {
+    let secs = std::env::var("DEEPSEEK_STREAM_IDLE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_STREAM_IDLE_TIMEOUT.as_secs())
+        .clamp(1, 3600);
+    Duration::from_secs(secs)
+}
 
 use crate::llm_client::StreamEventBox;
 use crate::logging;
@@ -177,8 +194,20 @@ impl DeepSeekClient {
             let is_reasoning_model = requires_reasoning_content(&model);
 
             let mut byte_stream = std::pin::pin!(byte_stream);
+            let idle = stream_idle_timeout();
 
-            while let Some(chunk_result) = byte_stream.next().await {
+            loop {
+                let chunk_result = match tokio_timeout(idle, byte_stream.next()).await {
+                    Ok(Some(result)) => result,
+                    Ok(None) => break, // Stream ended normally
+                    Err(_elapsed) => {
+                        yield Err(anyhow::anyhow!(
+                            "SSE stream idle timeout after {}s — no data received",
+                            idle.as_secs(),
+                        ));
+                        break;
+                    }
+                };
                 let chunk = match chunk_result {
                     Ok(bytes) => bytes,
                     Err(e) => {

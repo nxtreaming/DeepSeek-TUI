@@ -376,10 +376,17 @@ fn render_sidebar_section(f: &mut Frame, area: Rect, title: &str, lines: Vec<Lin
     }
 
     let theme = active_theme();
+    // Truncate the panel title so it always fits within the section width
+    // even after a resize. The title occupies up to 4 chars of border chrome
+    // (two spaces + one space on each side), so the max title length is
+    // area.width.saturating_sub(4) when borders are enabled.
+    let max_title_width = area.width.saturating_sub(4).max(1) as usize;
+    let display_title = truncate_line_to_width(title, max_title_width);
+
     let section = Paragraph::new(lines).wrap(Wrap { trim: false }).block(
         Block::default()
             .title(Line::from(vec![Span::styled(
-                format!(" {title} "),
+                format!(" {display_title} "),
                 Style::default().fg(theme.section_title_color).bold(),
             )]))
             .borders(theme.section_borders)

@@ -13,6 +13,12 @@ const DEFAULT_OPENAI_MODEL: &str = "gpt-4.1";
 const DEFAULT_DEEPSEEK_BASE_URL: &str = "https://api.deepseek.com";
 const DEFAULT_NVIDIA_NIM_BASE_URL: &str = "https://integrate.api.nvidia.com/v1";
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
+const DEFAULT_OPENROUTER_MODEL: &str = "deepseek/deepseek-v4-pro";
+const DEFAULT_OPENROUTER_FLASH_MODEL: &str = "deepseek/deepseek-v4-flash";
+const DEFAULT_NOVITA_MODEL: &str = "deepseek/deepseek-v4-pro";
+const DEFAULT_NOVITA_FLASH_MODEL: &str = "deepseek/deepseek-v4-flash";
+const DEFAULT_OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
+const DEFAULT_NOVITA_BASE_URL: &str = "https://api.novita.ai/v1";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
@@ -21,6 +27,8 @@ pub enum ProviderKind {
     Deepseek,
     NvidiaNim,
     Openai,
+    Openrouter,
+    Novita,
 }
 
 impl ProviderKind {
@@ -30,6 +38,8 @@ impl ProviderKind {
             Self::Deepseek => "deepseek",
             Self::NvidiaNim => "nvidia-nim",
             Self::Openai => "openai",
+            Self::Openrouter => "openrouter",
+            Self::Novita => "novita",
         }
     }
 
@@ -39,6 +49,8 @@ impl ProviderKind {
             "deepseek" | "deep-seek" => Some(Self::Deepseek),
             "nvidia" | "nvidia-nim" | "nvidia_nim" | "nim" => Some(Self::NvidiaNim),
             "openai" | "open-ai" => Some(Self::Openai),
+            "openrouter" | "open_router" => Some(Self::Openrouter),
+            "novita" => Some(Self::Novita),
             _ => None,
         }
     }
@@ -59,6 +71,10 @@ pub struct ProvidersToml {
     pub nvidia_nim: ProviderConfigToml,
     #[serde(default)]
     pub openai: ProviderConfigToml,
+    #[serde(default)]
+    pub openrouter: ProviderConfigToml,
+    #[serde(default)]
+    pub novita: ProviderConfigToml,
 }
 
 impl ProvidersToml {
@@ -68,6 +84,8 @@ impl ProvidersToml {
             ProviderKind::Deepseek => &self.deepseek,
             ProviderKind::NvidiaNim => &self.nvidia_nim,
             ProviderKind::Openai => &self.openai,
+            ProviderKind::Openrouter => &self.openrouter,
+            ProviderKind::Novita => &self.novita,
         }
     }
 
@@ -76,6 +94,8 @@ impl ProvidersToml {
             ProviderKind::Deepseek => &mut self.deepseek,
             ProviderKind::NvidiaNim => &mut self.nvidia_nim,
             ProviderKind::Openai => &mut self.openai,
+            ProviderKind::Openrouter => &mut self.openrouter,
+            ProviderKind::Novita => &mut self.novita,
         }
     }
 }
@@ -132,6 +152,12 @@ impl ConfigToml {
             "providers.openai.api_key" => self.providers.openai.api_key.clone(),
             "providers.openai.base_url" => self.providers.openai.base_url.clone(),
             "providers.openai.model" => self.providers.openai.model.clone(),
+            "providers.openrouter.api_key" => self.providers.openrouter.api_key.clone(),
+            "providers.openrouter.base_url" => self.providers.openrouter.base_url.clone(),
+            "providers.openrouter.model" => self.providers.openrouter.model.clone(),
+            "providers.novita.api_key" => self.providers.novita.api_key.clone(),
+            "providers.novita.base_url" => self.providers.novita.base_url.clone(),
+            "providers.novita.model" => self.providers.novita.model.clone(),
             _ => self.extras.get(key).map(toml::Value::to_string),
         }
     }
@@ -183,6 +209,24 @@ impl ConfigToml {
             "providers.nvidia_nim.model" => {
                 self.providers.nvidia_nim.model = Some(value.to_string());
             }
+            "providers.openrouter.api_key" => {
+                self.providers.openrouter.api_key = Some(value.to_string());
+            }
+            "providers.openrouter.base_url" => {
+                self.providers.openrouter.base_url = Some(value.to_string());
+            }
+            "providers.openrouter.model" => {
+                self.providers.openrouter.model = Some(value.to_string());
+            }
+            "providers.novita.api_key" => {
+                self.providers.novita.api_key = Some(value.to_string());
+            }
+            "providers.novita.base_url" => {
+                self.providers.novita.base_url = Some(value.to_string());
+            }
+            "providers.novita.model" => {
+                self.providers.novita.model = Some(value.to_string());
+            }
             _ => {
                 self.extras
                     .insert(key.to_string(), toml::Value::String(value.to_string()));
@@ -224,6 +268,12 @@ impl ConfigToml {
             "providers.nvidia_nim.api_key" => self.providers.nvidia_nim.api_key = None,
             "providers.nvidia_nim.base_url" => self.providers.nvidia_nim.base_url = None,
             "providers.nvidia_nim.model" => self.providers.nvidia_nim.model = None,
+            "providers.openrouter.api_key" => self.providers.openrouter.api_key = None,
+            "providers.openrouter.base_url" => self.providers.openrouter.base_url = None,
+            "providers.openrouter.model" => self.providers.openrouter.model = None,
+            "providers.novita.api_key" => self.providers.novita.api_key = None,
+            "providers.novita.base_url" => self.providers.novita.base_url = None,
+            "providers.novita.model" => self.providers.novita.model = None,
             _ => {
                 self.extras.remove(key);
             }
@@ -299,6 +349,24 @@ impl ConfigToml {
         if let Some(v) = self.providers.nvidia_nim.model.as_ref() {
             out.insert("providers.nvidia_nim.model".to_string(), v.clone());
         }
+        if let Some(v) = self.providers.openrouter.api_key.as_ref() {
+            out.insert("providers.openrouter.api_key".to_string(), redact_secret(v));
+        }
+        if let Some(v) = self.providers.openrouter.base_url.as_ref() {
+            out.insert("providers.openrouter.base_url".to_string(), v.clone());
+        }
+        if let Some(v) = self.providers.openrouter.model.as_ref() {
+            out.insert("providers.openrouter.model".to_string(), v.clone());
+        }
+        if let Some(v) = self.providers.novita.api_key.as_ref() {
+            out.insert("providers.novita.api_key".to_string(), redact_secret(v));
+        }
+        if let Some(v) = self.providers.novita.base_url.as_ref() {
+            out.insert("providers.novita.base_url".to_string(), v.clone());
+        }
+        if let Some(v) = self.providers.novita.model.as_ref() {
+            out.insert("providers.novita.model".to_string(), v.clone());
+        }
 
         for (k, v) in &self.extras {
             out.insert(k.clone(), v.to_string());
@@ -338,6 +406,8 @@ impl ConfigToml {
                 ProviderKind::Deepseek => DEFAULT_DEEPSEEK_BASE_URL.to_string(),
                 ProviderKind::NvidiaNim => DEFAULT_NVIDIA_NIM_BASE_URL.to_string(),
                 ProviderKind::Openai => DEFAULT_OPENAI_BASE_URL.to_string(),
+                ProviderKind::Openrouter => DEFAULT_OPENROUTER_BASE_URL.to_string(),
+                ProviderKind::Novita => DEFAULT_NOVITA_BASE_URL.to_string(),
             });
 
         let model = cli
@@ -351,6 +421,8 @@ impl ConfigToml {
                 ProviderKind::Deepseek => DEFAULT_DEEPSEEK_MODEL.to_string(),
                 ProviderKind::NvidiaNim => DEFAULT_NVIDIA_NIM_MODEL.to_string(),
                 ProviderKind::Openai => DEFAULT_OPENAI_MODEL.to_string(),
+                ProviderKind::Openrouter => DEFAULT_OPENROUTER_MODEL.to_string(),
+                ProviderKind::Novita => DEFAULT_NOVITA_MODEL.to_string(),
             });
         let model = normalize_model_for_provider(provider, &model);
 

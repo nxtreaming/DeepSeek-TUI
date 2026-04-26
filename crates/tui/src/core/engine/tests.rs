@@ -546,7 +546,7 @@ async fn error_escalation_triggers_replan_when_severe_or_repeated_failures() {
     let before_len = engine.session.messages.len();
     let turn = TurnContext::new(10);
     let restarted = engine
-        .run_capacity_error_escalation_checkpoint(&turn, AppMode::Agent, 2, 2)
+        .run_capacity_error_escalation_checkpoint(&turn, AppMode::Agent, 2, 2, &[])
         .await;
 
     assert!(restarted);

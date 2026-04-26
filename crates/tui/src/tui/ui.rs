@@ -24,6 +24,7 @@ use ratatui::{
     widgets::Block,
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use tracing;
 
 use crate::audit::log_sensitive_event;
 use crate::client::DeepSeekClient;
@@ -501,6 +502,23 @@ async fn run_event_loop(
                             }],
                         });
                         handle_tool_call_complete(app, &id, &name, &result);
+
+                        // Immediately refresh the task panel sidebar when a
+                        // tool that changes task state completes, so the
+                        // Tasks panel stays in sync with tool execution
+                        // rather than waiting up to 2.5 s for the periodic
+                        // poll.
+                        if matches!(
+                            name.as_str(),
+                            "agent_spawn" | "agent_swarm" | "agent_cancel" | "todo_write"
+                        ) {
+                            let tasks = task_manager.list_tasks(Some(10)).await;
+                            app.task_panel = tasks
+                                .into_iter()
+                                .map(task_summary_to_panel_entry)
+                                .collect();
+                            last_task_refresh = Instant::now();
+                        }
                     }
                     EngineEvent::TurnStarted { turn_id } => {
                         app.is_loading = true;
@@ -916,6 +934,11 @@ async fn run_event_loop(
 
             // Handle bracketed paste events
             if let Event::Paste(text) = &evt {
+                tracing::debug!(
+                    paste_len = text.len(),
+                    preview = %text.chars().take(80).collect::<String>(),
+                    "Received bracketed paste event"
+                );
                 if app.onboarding == OnboardingState::ApiKey {
                     // Paste into API key input
                     app.insert_api_key_str(text);

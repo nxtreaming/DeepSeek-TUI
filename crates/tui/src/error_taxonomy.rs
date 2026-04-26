@@ -1,9 +1,4 @@
-// TODO(integrate): Wire into engine/UI — tracked as future work
-#![allow(dead_code)]
-
 //! Shared error taxonomy across client, tools, runtime, and UI.
-//!
-//! Not yet wired into consumers; will be adopted incrementally.
 use std::fmt;
 
 use crate::llm_client::LlmError;
@@ -184,6 +179,56 @@ impl From<LlmError> for ErrorEnvelope {
             ),
         }
     }
+}
+
+/// Classify an error message string into an ErrorCategory.
+///
+/// Uses heuristic keyword matching on the lowercased message.
+/// This is a replacement for ad-hoc string matching in callers.
+#[must_use]
+pub fn classify_error_message(message: &str) -> ErrorCategory {
+    let lower = message.to_lowercase();
+
+    if lower.contains("maximum context length")
+        || lower.contains("context length")
+        || lower.contains("context_length")
+        || lower.contains("prompt is too long")
+        || (lower.contains("requested") && lower.contains("tokens") && lower.contains("maximum"))
+        || lower.contains("context window")
+    {
+        return ErrorCategory::InvalidInput;
+    }
+    if lower.contains("rate limit")
+        || lower.contains("too many requests")
+        || lower.contains("429")
+        || lower.contains("quota")
+    {
+        return ErrorCategory::RateLimit;
+    }
+    if lower.contains("timeout") || lower.contains("timed out") {
+        return ErrorCategory::Timeout;
+    }
+    if lower.contains("auth") || lower.contains("unauthorized") || lower.contains("api key") {
+        return ErrorCategory::Authentication;
+    }
+    if lower.contains("permission") || lower.contains("forbidden") || lower.contains("denied") {
+        return ErrorCategory::Authorization;
+    }
+    if lower.contains("network") || lower.contains("connection") || lower.contains("dns") {
+        return ErrorCategory::Network;
+    }
+    if lower.contains("parse") || lower.contains("syntax") || lower.contains("malformed") {
+        return ErrorCategory::Parse;
+    }
+    if lower.contains("not found") || lower.contains("unavailable") || lower.contains("not available")
+    {
+        return ErrorCategory::State;
+    }
+    if lower.contains("tool") {
+        return ErrorCategory::Tool;
+    }
+
+    ErrorCategory::Internal
 }
 
 impl From<ToolError> for ErrorEnvelope {

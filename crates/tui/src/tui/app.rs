@@ -404,6 +404,7 @@ pub struct App {
     pub auto_compact: bool,
     pub calm_mode: bool,
     pub low_motion: bool,
+    pub fancy_animations: bool,
     pub show_thinking: bool,
     pub show_tool_details: bool,
     pub composer_density: ComposerDensity,
@@ -653,6 +654,7 @@ impl App {
         let auto_compact = settings.auto_compact;
         let calm_mode = settings.calm_mode;
         let low_motion = settings.low_motion;
+        let fancy_animations = settings.fancy_animations;
         let show_thinking = settings.show_thinking;
         let show_tool_details = settings.show_tool_details;
         let composer_density = ComposerDensity::from_setting(&settings.composer_density);
@@ -746,6 +748,7 @@ impl App {
             auto_compact,
             calm_mode,
             low_motion,
+            fancy_animations,
             show_thinking,
             show_tool_details,
             composer_density,

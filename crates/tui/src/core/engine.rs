@@ -1036,13 +1036,8 @@ fn context_input_budget(model: &str, requested_output_tokens: u32) -> Option<usi
 }
 
 fn is_context_length_error_message(message: &str) -> bool {
-    let lower = message.to_lowercase();
-    lower.contains("maximum context length")
-        || lower.contains("context length")
-        || lower.contains("context_length")
-        || lower.contains("prompt is too long")
-        || (lower.contains("requested") && lower.contains("tokens") && lower.contains("maximum"))
-        || lower.contains("context window")
+    crate::error_taxonomy::classify_error_message(message)
+        == crate::error_taxonomy::ErrorCategory::InvalidInput
 }
 
 fn emit_tool_audit(event: serde_json::Value) {
@@ -3239,6 +3234,7 @@ impl Engine {
                     mode,
                     step_error_count,
                     consecutive_tool_error_steps,
+                    &[],
                 )
                 .await
             {
@@ -3339,8 +3335,19 @@ impl Engine {
         mode: AppMode,
         step_error_count: usize,
         consecutive_tool_error_steps: u32,
+        #[allow(clippy::needless_pass_by_ref_mut)] // error_categories will be used in future escalation logic
+        error_categories: &[crate::error_taxonomy::ErrorCategory],
     ) -> bool {
         if step_error_count == 0 && consecutive_tool_error_steps < 2 {
+            return false;
+        }
+
+        let has_context_overflow = error_categories
+            .iter()
+            .any(|&cat| cat == crate::error_taxonomy::ErrorCategory::InvalidInput);
+
+        if !has_context_overflow && consecutive_tool_error_steps < 2 {
+            // Only escalate on non-context errors when we have consecutive failures
             return false;
         }
 
@@ -3373,12 +3380,19 @@ impl Engine {
             return false;
         }
 
+        let category_labels: Vec<String> = error_categories
+            .iter()
+            .map(|c| c.to_string())
+            .collect();
         self.apply_verify_and_replan(
             turn,
             mode,
             Some(&forced),
             &format!(
-                "error_escalation: step_errors={step_error_count}, consecutive_steps={consecutive_tool_error_steps}"
+                "error_escalation: step_errors={}, consecutive_steps={}, categories={}",
+                step_error_count,
+                consecutive_tool_error_steps,
+                category_labels.join(",")
             ),
         )
         .await
