@@ -90,6 +90,7 @@ use super::widgets::{
 // === Constants ===
 
 const SLASH_MENU_LIMIT: usize = 6;
+const MENTION_MENU_LIMIT: usize = 6;
 const MIN_CHAT_HEIGHT: u16 = 3;
 const MIN_COMPOSER_HEIGHT: u16 = 2;
 const CONTEXT_WARNING_THRESHOLD_PERCENT: f64 = 85.0;
@@ -1142,6 +1143,12 @@ async fn run_event_loop(
             if slash_menu_open && app.slash_menu_selected >= slash_menu_entries.len() {
                 app.slash_menu_selected = slash_menu_entries.len().saturating_sub(1);
             }
+            let mention_menu_entries =
+                crate::tui::file_mention::visible_mention_menu_entries(app, MENTION_MENU_LIMIT);
+            let mention_menu_open = !mention_menu_entries.is_empty();
+            if mention_menu_open && app.mention_menu_selected >= mention_menu_entries.len() {
+                app.mention_menu_selected = mention_menu_entries.len().saturating_sub(1);
+            }
 
             // Global keybindings
             match key.code {
@@ -1263,6 +1270,10 @@ async fn run_event_loop(
                     let _ = engine_handle.send(Op::Shutdown).await;
                     return Ok(());
                 }
+                KeyCode::Esc if mention_menu_open => {
+                    app.mention_menu_hidden = true;
+                    app.mention_menu_selected = 0;
+                }
                 KeyCode::Esc => match next_escape_action(app, slash_menu_open) {
                     EscapeAction::CloseSlashMenu => app.close_slash_menu(),
                     EscapeAction::CancelRequest => {
@@ -1283,6 +1294,13 @@ async fn run_event_loop(
                 }
                 KeyCode::Up
                     if key.modifiers.is_empty()
+                        && mention_menu_open
+                        && app.mention_menu_selected > 0 =>
+                {
+                    app.mention_menu_selected = app.mention_menu_selected.saturating_sub(1);
+                }
+                KeyCode::Up
+                    if key.modifiers.is_empty()
                         && slash_menu_open
                         && app.slash_menu_selected > 0 =>
                 {
@@ -1290,6 +1308,10 @@ async fn run_event_loop(
                 }
                 KeyCode::Down if key.modifiers.contains(KeyModifiers::ALT) => {
                     app.scroll_down(3);
+                }
+                KeyCode::Down if key.modifiers.is_empty() && mention_menu_open => {
+                    app.mention_menu_selected = (app.mention_menu_selected + 1)
+                        .min(mention_menu_entries.len().saturating_sub(1));
                 }
                 KeyCode::Down if key.modifiers.is_empty() && slash_menu_open => {
                     app.slash_menu_selected = (app.slash_menu_selected + 1)
@@ -1304,6 +1326,14 @@ async fn run_event_loop(
                     app.scroll_down(page);
                 }
                 KeyCode::Tab => {
+                    if mention_menu_open
+                        && crate::tui::file_mention::apply_mention_menu_selection(
+                            app,
+                            &mention_menu_entries,
+                        )
+                    {
+                        continue;
+                    }
                     if slash_menu_open && apply_slash_menu_selection(app, &slash_menu_entries, true)
                     {
                         continue;
@@ -1365,6 +1395,15 @@ async fn run_event_loop(
                 }
                 KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
                     app.insert_char('\n');
+                }
+                KeyCode::Enter
+                    if mention_menu_open
+                        && crate::tui::file_mention::apply_mention_menu_selection(
+                            app,
+                            &mention_menu_entries,
+                        ) =>
+                {
+                    continue;
                 }
                 KeyCode::Enter => {
                     if let Some(input) = app.submit_input() {
@@ -2580,12 +2619,24 @@ fn render(f: &mut Frame, app: &mut App) {
     let footer_height = 1;
     let body_height = size.height.saturating_sub(header_height + footer_height);
     let slash_menu_entries = visible_slash_menu_entries(app, SLASH_MENU_LIMIT);
+    let mention_menu_entries =
+        crate::tui::file_mention::visible_mention_menu_entries(app, MENTION_MENU_LIMIT);
+    if !mention_menu_entries.is_empty()
+        && app.mention_menu_selected >= mention_menu_entries.len()
+    {
+        app.mention_menu_selected = mention_menu_entries.len().saturating_sub(1);
+    }
     let context_usage = context_usage_snapshot(app);
     let composer_max_height = body_height
         .saturating_sub(MIN_CHAT_HEIGHT)
         .max(MIN_COMPOSER_HEIGHT);
     let composer_height = {
-        let composer_widget = ComposerWidget::new(app, composer_max_height, &slash_menu_entries);
+        let composer_widget = ComposerWidget::new(
+            app,
+            composer_max_height,
+            &slash_menu_entries,
+            &mention_menu_entries,
+        );
         composer_widget.desired_height(size.width)
     };
 
@@ -2672,7 +2723,12 @@ fn render(f: &mut Frame, app: &mut App) {
 
     // Render composer
     let cursor_pos = {
-        let composer_widget = ComposerWidget::new(app, composer_max_height, &slash_menu_entries);
+        let composer_widget = ComposerWidget::new(
+            app,
+            composer_max_height,
+            &slash_menu_entries,
+            &mention_menu_entries,
+        );
         let buf = f.buffer_mut();
         composer_widget.render(chunks[2], buf);
         composer_widget.cursor_pos(chunks[2])

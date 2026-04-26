@@ -203,14 +203,42 @@ pub struct ComposerWidget<'a> {
     app: &'a App,
     max_height: u16,
     slash_menu_entries: &'a [String],
+    mention_menu_entries: &'a [String],
 }
 
 impl<'a> ComposerWidget<'a> {
-    pub fn new(app: &'a App, max_height: u16, slash_menu_entries: &'a [String]) -> Self {
+    pub fn new(
+        app: &'a App,
+        max_height: u16,
+        slash_menu_entries: &'a [String],
+        mention_menu_entries: &'a [String],
+    ) -> Self {
         Self {
             app,
             max_height,
             slash_menu_entries,
+            mention_menu_entries,
+        }
+    }
+
+    /// Number of popup rows below the input. Mention and slash menus are
+    /// mutually exclusive — the cursor can only sit inside an `@token` OR
+    /// a `/cmd` token, not both at once. Mention takes precedence because
+    /// the partial-mention check is positional and stricter than slash's
+    /// "starts-with-/" check.
+    fn active_menu_entries(&self) -> &'a [String] {
+        if !self.mention_menu_entries.is_empty() {
+            self.mention_menu_entries
+        } else {
+            self.slash_menu_entries
+        }
+    }
+
+    fn active_menu_selected(&self) -> usize {
+        if !self.mention_menu_entries.is_empty() {
+            self.app.mention_menu_selected
+        } else {
+            self.app.slash_menu_selected
         }
     }
 
@@ -244,7 +272,8 @@ impl Renderable for ComposerWidget<'_> {
         let background = Style::default().bg(self.app.ui_theme.composer_bg);
         let has_panel = self.has_panel(area);
         let inner_area = self.inner_area(area);
-        let menu_lines = self.slash_menu_entries.len();
+        let menu_entries = self.active_menu_entries();
+        let menu_lines = menu_entries.len();
         let input_rows_budget = composer_input_rows_budget(inner_area.height, menu_lines);
         let content_width = usize::from(inner_area.width.max(1));
         let (visible_lines, _cursor_row, _cursor_col) = layout_input(
@@ -317,12 +346,18 @@ impl Renderable for ComposerWidget<'_> {
         }
         lines.extend(input_lines);
 
-        if !self.slash_menu_entries.is_empty() {
+        if !menu_entries.is_empty() {
             let selected = self
-                .app
-                .slash_menu_selected
-                .min(self.slash_menu_entries.len().saturating_sub(1));
-            for (idx, entry) in self.slash_menu_entries.iter().enumerate() {
+                .active_menu_selected()
+                .min(menu_entries.len().saturating_sub(1));
+            // `@`-mention entries get an "@" prefix so the popup line reads
+            // like the actual mention the user is composing.
+            let prefix = if !self.mention_menu_entries.is_empty() {
+                "@"
+            } else {
+                ""
+            };
+            for (idx, entry) in menu_entries.iter().enumerate() {
                 let is_selected = idx == selected;
                 let style = if is_selected {
                     Style::default()
@@ -336,7 +371,7 @@ impl Renderable for ComposerWidget<'_> {
                     Span::styled(" ", Style::default()),
                     Span::styled(marker, style),
                     Span::styled(" ", style),
-                    Span::styled(entry.clone(), style),
+                    Span::styled(format!("{prefix}{entry}"), style),
                 ]));
             }
         }
@@ -352,7 +387,7 @@ impl Renderable for ComposerWidget<'_> {
             &self.app.input,
             width,
             self.max_height.min(self.max_height_cap()),
-            self.slash_menu_entries.len(),
+            self.active_menu_entries().len(),
             self.app.composer_density,
             self.app.composer_border,
         )
@@ -362,7 +397,7 @@ impl Renderable for ComposerWidget<'_> {
         let inner_area = self.inner_area(area);
         let content_width = usize::from(inner_area.width.max(1));
         let input_rows_budget =
-            composer_input_rows_budget(inner_area.height, self.slash_menu_entries.len());
+            composer_input_rows_budget(inner_area.height, self.active_menu_entries().len());
 
         let (visible_lines, cursor_row, cursor_col) = layout_input(
             &self.app.input,
@@ -1394,7 +1429,8 @@ mod tests {
         // Pin density so the test is independent of any loaded user settings.
         app.composer_density = ComposerDensity::Comfortable;
         let slash_menu_entries = Vec::<String>::new();
-        let widget = ComposerWidget::new(&app, 5, &slash_menu_entries);
+        let mention_menu_entries = Vec::<String>::new();
+        let widget = ComposerWidget::new(&app, 5, &slash_menu_entries, &mention_menu_entries);
 
         // Use a wide area so the placeholder fits on one line (no wrapping).
         let area = Rect {
@@ -1418,7 +1454,8 @@ mod tests {
         let mut app = create_test_app();
         app.composer_density = ComposerDensity::Comfortable;
         let slash_menu_entries = Vec::<String>::new();
-        let widget = ComposerWidget::new(&app, 5, &slash_menu_entries);
+        let mention_menu_entries = Vec::<String>::new();
+        let widget = ComposerWidget::new(&app, 5, &slash_menu_entries, &mention_menu_entries);
 
         // Narrow area forces the placeholder to wrap.
         let area = Rect {
@@ -1444,7 +1481,8 @@ mod tests {
         app.composer_density = ComposerDensity::Comfortable;
         app.composer_border = false;
         let slash_menu_entries = Vec::<String>::new();
-        let widget = ComposerWidget::new(&app, 3, &slash_menu_entries);
+        let mention_menu_entries = Vec::<String>::new();
+        let widget = ComposerWidget::new(&app, 3, &slash_menu_entries, &mention_menu_entries);
 
         let area = Rect {
             x: 0,

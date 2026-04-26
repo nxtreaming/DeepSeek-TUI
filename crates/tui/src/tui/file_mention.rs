@@ -143,6 +143,60 @@ pub fn find_file_mention_completions(workspace: &Path, partial: &str, limit: usi
     prefix_hits
 }
 
+/// Resolve the `@`-mention completion popup contents for the current
+/// composer state. Returns an empty `Vec` when:
+///
+/// - The popup is suppressed (`app.mention_menu_hidden`).
+/// - The cursor is not inside an `@<partial>` token.
+/// - The workspace walk produced no candidates.
+///
+/// Mirrors `visible_slash_menu_entries` so the composer widget can treat
+/// both menus identically (one `Vec<String>` of entries, one selected index).
+///
+/// Once the composer widget is extended to render this as a popup, it will
+/// pair with `apply_mention_menu_selection` for the Up/Down/Enter flow.
+#[must_use]
+pub fn visible_mention_menu_entries(app: &App, limit: usize) -> Vec<String> {
+    if app.mention_menu_hidden {
+        return Vec::new();
+    }
+    let Some((_byte_start, partial)) =
+        partial_file_mention_at_cursor(&app.input, app.cursor_position)
+    else {
+        return Vec::new();
+    };
+    if limit == 0 {
+        return Vec::new();
+    }
+    find_file_mention_completions(&app.workspace, &partial, limit)
+}
+
+/// Apply the currently selected `@`-mention popup entry to the composer
+/// input, splicing it in place of the `@<partial>` token at the cursor.
+/// Returns `true` if a substitution occurred.
+///
+/// Designed to be invoked by the same keybinding that drives
+/// `apply_slash_menu_selection` (Enter / Tab); the caller is responsible
+/// for choosing which menu is "active" based on cursor context.
+pub fn apply_mention_menu_selection(app: &mut App, entries: &[String]) -> bool {
+    if entries.is_empty() {
+        return false;
+    }
+    let Some((byte_start, partial)) =
+        partial_file_mention_at_cursor(&app.input, app.cursor_position)
+    else {
+        return false;
+    };
+    let selected_idx = app
+        .mention_menu_selected
+        .min(entries.len().saturating_sub(1));
+    let replacement = &entries[selected_idx];
+    replace_file_mention(app, byte_start, &partial, replacement);
+    app.mention_menu_hidden = false;
+    app.status_message = Some(format!("Attached @{replacement}"));
+    true
+}
+
 /// Tab-completion handler for `@file` mentions. Mirrors the slash-command
 /// flow: a single match is applied directly; multiple matches with a longer
 /// shared prefix extend the partial; otherwise the first few candidates are

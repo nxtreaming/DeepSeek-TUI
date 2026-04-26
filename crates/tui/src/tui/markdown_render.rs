@@ -27,7 +27,6 @@
 use std::sync::Arc;
 
 #[cfg(any(test, feature = "perf-counters"))]
-#[cfg(any(test, feature = "perf-counters"))]
 use std::cell::Cell;
 
 use ratatui::style::{Modifier, Style};
@@ -36,14 +35,11 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::palette;
 
-/// Per-process counter incremented every time [`parse`] runs. Used by tests to
-/// prove that width-only changes hit the cached-AST path and skip parsing.
-///
-/// Available in test builds and behind the `perf-counters` feature flag so
-/// release builds pay no cost.
-// Thread-local instead of a global atomic so concurrent tests that call
-// `parse()` don't pollute each other's counters. Each test thread sees only
-// its own invocations.
+// Thread-local counter incremented every time `parse` runs. Used by tests to
+// prove that width-only changes hit the cached-AST path and skip parsing.
+// Available in test builds and behind the `perf-counters` feature flag so
+// release builds pay no cost. Thread-local (not global atomic) so concurrent
+// tests calling `parse()` can't pollute each other's counters.
 #[cfg(any(test, feature = "perf-counters"))]
 thread_local! {
     static PARSE_INVOCATIONS: Cell<u64> = const { Cell::new(0) };

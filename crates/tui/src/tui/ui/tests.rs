@@ -1,8 +1,8 @@
 use super::*;
 use crate::config::Config;
 use crate::tui::file_mention::{
-    find_file_mention_completions, partial_file_mention_at_cursor, try_autocomplete_file_mention,
-    user_request_with_file_mentions,
+    apply_mention_menu_selection, find_file_mention_completions, partial_file_mention_at_cursor,
+    try_autocomplete_file_mention, user_request_with_file_mentions, visible_mention_menu_entries,
 };
 use crate::tui::history::{GenericToolCell, HistoryCell, ToolCell, ToolStatus};
 use crate::tui::views::{ModalView, ViewAction};
@@ -1055,6 +1055,105 @@ fn try_autocomplete_file_mention_returns_false_outside_mention() {
     app.input = "no mention here".to_string();
     app.cursor_position = app.input.chars().count();
     assert!(!try_autocomplete_file_mention(&mut app));
+}
+
+// ---- P2.1: @-mention popup helpers ----
+//
+// `visible_mention_menu_entries` is the entries source the composer widget
+// renders; `apply_mention_menu_selection` is what Tab/Enter invoke when the
+// popup is open. The popup widget itself piggybacks the slash-menu render
+// path (see `ComposerWidget::active_menu_entries`).
+
+#[test]
+fn mention_popup_is_empty_when_cursor_is_not_in_a_mention() {
+    let mut app = create_test_app();
+    app.input = "no mention here".to_string();
+    app.cursor_position = app.input.chars().count();
+    assert!(visible_mention_menu_entries(&app, 6).is_empty());
+}
+
+#[test]
+fn mention_popup_lists_workspace_matches_for_cursor_partial() {
+    let tmpdir = TempDir::new().expect("tempdir");
+    std::fs::create_dir_all(tmpdir.path().join("docs")).unwrap();
+    std::fs::write(tmpdir.path().join("docs/deepseek_v4.pdf"), b"%PDF-").unwrap();
+    std::fs::write(tmpdir.path().join("docs/MCP.md"), "x").unwrap();
+    std::fs::write(tmpdir.path().join("README.md"), "x").unwrap();
+
+    let mut app = create_test_app();
+    app.workspace = tmpdir.path().to_path_buf();
+    app.input = "look at @docs/".to_string();
+    app.cursor_position = app.input.chars().count();
+
+    let entries = visible_mention_menu_entries(&app, 6);
+    assert!(!entries.is_empty(), "popup should surface docs/ entries");
+    assert!(entries.iter().any(|e| e.starts_with("docs/")));
+    // README.md doesn't match `docs/` — confirm we didn't dump every file.
+    assert!(!entries.iter().any(|e| e == "README.md"));
+}
+
+#[test]
+fn mention_popup_respects_hidden_flag() {
+    let tmpdir = TempDir::new().expect("tempdir");
+    std::fs::write(tmpdir.path().join("README.md"), "x").unwrap();
+
+    let mut app = create_test_app();
+    app.workspace = tmpdir.path().to_path_buf();
+    app.input = "@READ".to_string();
+    app.cursor_position = app.input.chars().count();
+    app.mention_menu_hidden = true;
+
+    assert!(
+        visible_mention_menu_entries(&app, 6).is_empty(),
+        "Esc-hidden popup must not surface entries until next input edit",
+    );
+}
+
+#[test]
+fn apply_mention_menu_selection_splices_selected_entry() {
+    let tmpdir = TempDir::new().expect("tempdir");
+    std::fs::create_dir_all(tmpdir.path().join("crates/tui")).unwrap();
+    std::fs::write(tmpdir.path().join("crates/tui/lib.rs"), "//").unwrap();
+    std::fs::write(tmpdir.path().join("crates/tui/main.rs"), "//").unwrap();
+
+    let mut app = create_test_app();
+    app.workspace = tmpdir.path().to_path_buf();
+    app.input = "open @crates/tui/m".to_string();
+    app.cursor_position = app.input.chars().count();
+
+    let entries = visible_mention_menu_entries(&app, 6);
+    assert!(!entries.is_empty(), "expected entries for @crates/tui/m");
+    // Pick whichever entry appears at index 0; it's deterministic given the
+    // workspace setup. Apply it.
+    app.mention_menu_selected = 0;
+    let applied = apply_mention_menu_selection(&mut app, &entries);
+    assert!(applied, "apply_mention_menu_selection should report success");
+    assert!(
+        app.input.starts_with("open @"),
+        "input should still start with `open @`, got: {input}",
+        input = app.input,
+    );
+    // Cursor should land at the end of the spliced token.
+    assert_eq!(app.cursor_position, app.input.chars().count());
+}
+
+#[test]
+fn apply_mention_menu_selection_is_noop_outside_a_mention() {
+    let mut app = create_test_app();
+    app.input = "no @ here".to_string();
+    app.cursor_position = 1; // before the @ token
+    let applied = apply_mention_menu_selection(&mut app, &["whatever".to_string()]);
+    assert!(!applied);
+    assert_eq!(app.input, "no @ here");
+}
+
+#[test]
+fn apply_mention_menu_selection_with_no_entries_is_noop() {
+    let mut app = create_test_app();
+    app.input = "@partial".to_string();
+    app.cursor_position = app.input.chars().count();
+    let applied = apply_mention_menu_selection(&mut app, &[]);
+    assert!(!applied);
 }
 
 // === CX#7 — single active cell mutated in place for parallel tool calls ===
